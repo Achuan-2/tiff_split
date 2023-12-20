@@ -1,6 +1,6 @@
 function tiff_save(filepath,imgStack,tagstruct)
     s=whos('imgStack');
-    if s.bytes > 2^32-1 % 约等于4GB
+    if s.bytes > 2^31-1 % 约等于4GB
         t = Tiff(filepath,'w8');
     else
         t = Tiff(filepath,'w');
