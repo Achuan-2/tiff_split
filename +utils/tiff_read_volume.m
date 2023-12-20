@@ -1,4 +1,4 @@
-function varargout =  tiff_read_volume(filepath,varargin)
+function varargout =  tiff_read_volume(filepath,nChannel)
     %tiff_read_volume - 读取Tiff图像的灰度值.
     %
     %   USAGE
@@ -14,10 +14,11 @@ function varargout =  tiff_read_volume(filepath,varargin)
     %       imgStack         -   输出nChannel个图像
     
     % 设置默认参数
-    p = inputParser;            % 函数的输入解析器
-    addParameter(p,'nChannel',1);      % 设置变量名和默认参数
-    parse(p,varargin{:});       % 对输入变量进行解析，如果检测到前面的变量被赋值，则更新变量取值
-    nChannel = p.Results.nChannel;   
+    arguments
+        filepath string;
+        nChannel double = 1;
+    end
+
 
     % read info
     imgStack = tiffreadVolume(filepath);
@@ -29,17 +30,8 @@ function varargout =  tiff_read_volume(filepath,varargin)
     end
 
     % 如果 Tif 有多个通道，则需要分割出各个通道图像
-    [height, width, nSlices] = size(imgStack);
-    nFrames = nSlices/nChannel;
-    dataType = class(imgStack);
-
-
-
     varargout = cell(1,nChannel);
     for iChannel = 1:nChannel
-        varargout{iChannel} = zeros(height, width, nFrames, dataType);
-        for iFrame = 1:nFrames
-            varargout{iChannel}(:, :, iFrame) = imgStack(:, :, nChannel*(iFrame-1)+iChannel);
-        end
+        varargout{iChannel}= imgStack(:, :, iChannel:nChannel:end);
     end
 end
