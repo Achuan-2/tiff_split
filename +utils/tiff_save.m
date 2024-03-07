@@ -1,4 +1,4 @@
-function tiff_save_lib(input_img, filepath, options)
+function tiff_save(input_img, filepath, options)
 %tiff_save_lib: Save a 3D image stack as a TIFF volume.
 %
 %   USAGE
