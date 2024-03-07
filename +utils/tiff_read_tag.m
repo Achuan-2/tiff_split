@@ -12,21 +12,21 @@ function tagstruct = tiff_read_tag(filepath)
     t = Tiff(filepath, 'r');
 
     tagNames = {
-    'ImageLength',
-    'ImageWidth',
-    'ImageDescription',
-    'Artist',
-    'ResolutionUnit',
-    'XResolution',
-    'YResolution',
-    'Orientation',
-    'Photometric',
-    'BitsPerSample',
-    'SamplesPerPixel',
-    'SampleFormat',
-    'RowsPerStrip',
-    'PlanarConfiguration',
-    'Software',
+    'ImageLength'
+    'ImageWidth'
+    'ImageDescription'
+    'Artist'
+    'ResolutionUnit'
+    'XResolution'
+    'YResolution'
+    'Orientation'
+    'Photometric'
+    'BitsPerSample'
+    'SamplesPerPixel'
+    'SampleFormat'
+    'RowsPerStrip'
+    'PlanarConfiguration'
+    'Software'
 };
     tagstruct = struct();
     % 循环获取每个tag的值
