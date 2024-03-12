@@ -2,8 +2,8 @@ function varargout = tiff_read(filepath, nChannel)
     %tiff_read_volume - 读取Tiff图像的灰度值.
     %
     %   USAGE
-    %       imgStack = tiff_read_volume(filepath);
-    %       [imgCh1,imgCh2] = tiff_read_volume(filepath,2);
+    %       imgStack = tiff_read(filepath);
+    %       [imgCh1,imgCh2] = tiff_read(filepath,2);
     %
     %   INPUT PARAMETERS
     %       filepath             -   图像文件的路径

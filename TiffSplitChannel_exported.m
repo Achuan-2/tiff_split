@@ -2,34 +2,36 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
 
     % Properties that correspond to app components
     properties (Access = public)
-        TiffSplitChannelUIFigure    matlab.ui.Figure
-        HelpMenu                    matlab.ui.container.Menu
-        RippleNoiseSpinner          matlab.ui.control.Spinner
-        RippleNoiseSpinnerLabel     matlab.ui.control.Label
-        ConsoleTextArea             matlab.ui.control.TextArea
-        ConsoleTextAreaLabel        matlab.ui.control.Label
-        OutputFolderEditField       matlab.ui.control.EditField
-        OutputFolderEditFieldLabel  matlab.ui.control.Label
-        EndIndexSpinner             matlab.ui.control.Spinner
-        EndIndexSpinnerLabel        matlab.ui.control.Label
-        StartIndexSpinner           matlab.ui.control.Spinner
-        StartIndexSpinnerLabel      matlab.ui.control.Label
-        FolderEditField             matlab.ui.control.EditField
-        RippleNoiseCheckBox         matlab.ui.control.CheckBox
-        FolderEditFieldLabel        matlab.ui.control.Label
-        OpenFolderButton            matlab.ui.control.Button
-        IncrementalModeCheckBox     matlab.ui.control.CheckBox
-        UpdateButton                matlab.ui.control.Button
-        TiffLabel                   matlab.ui.control.Label
-        TiffRangeLabel              matlab.ui.control.Label
-        ProcessButton               matlab.ui.control.Button
-        ProcessAllCheckBox          matlab.ui.control.CheckBox
-        FileSelectButton            matlab.ui.control.Button
+        TiffSplitChannelUIFigure       matlab.ui.Figure
+        FolderDropDown                 matlab.ui.control.DropDown
+        ScanphaseSpinner               matlab.ui.control.Spinner
+        ScanphaseCorrectDropDown       matlab.ui.control.DropDown
+        ScanphaseCorrectDropDownLabel  matlab.ui.control.Label
+        RippleNoiseSpinner             matlab.ui.control.Spinner
+        RippleNoiseSpinnerLabel        matlab.ui.control.Label
+        ConsoleTextArea                matlab.ui.control.TextArea
+        ConsoleTextAreaLabel           matlab.ui.control.Label
+        OutputFolderEditField          matlab.ui.control.EditField
+        OutputFolderEditFieldLabel     matlab.ui.control.Label
+        EndIndexSpinner                matlab.ui.control.Spinner
+        EndIndexSpinnerLabel           matlab.ui.control.Label
+        StartIndexSpinner              matlab.ui.control.Spinner
+        StartIndexSpinnerLabel         matlab.ui.control.Label
+        FolderEditField                matlab.ui.control.EditField
+        RippleNoiseCheckBox            matlab.ui.control.CheckBox
+        OpenFolderButton               matlab.ui.control.Button
+        UpdateButton                   matlab.ui.control.Button
+        TiffLabel                      matlab.ui.control.Label
+        TiffRangeLabel                 matlab.ui.control.Label
+        ProcessButton                  matlab.ui.control.Button
+        FileSelectButton               matlab.ui.control.Button
     end
 
     
     properties (Access = private)
         folder; % 存放scanimage成像 tiff 的文件夹
+        tiffpath; % 选择单个文件进行处理，保存文件路径
+        index_updated = false; % 是否选择文件夹并且点击update成功update了
         fileStartIndex; 
         fileEndIndex; 
         lastEndIndex;
@@ -70,7 +72,7 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
             app.StartIndexSpinner.Value = app.fileStartIndex;
             app.EndIndexSpinner.Value =  app.fileEndIndex;
 
-            if app.IncrementalModeCheckBox.Value && ~isempty(app.lastEndIndex) 
+            if  ~isempty(app.lastEndIndex) 
                 if app.lastEndIndex == app.fileEndIndex
                     % 反复点击update，而文件没有新增，strat index依然为上次处理的文件编号
                     app.StartIndexSpinner.Value = app.lastEndIndex;
@@ -86,6 +88,7 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
             app.ProcessButton.Enable = "on";
             app.OpenFolderButton.Enable = "on";
             app.RippleNoiseCheckBox.Enable = "on";
+            app.index_updated = true;
         end
         
         function print_console(app,str)
@@ -93,6 +96,154 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
             string = sprintf('%s\n%s\n', time,str); % 将数据格式化为字符串或字符向量
             app.cellArrayText=horzcat(app.cellArrayText,string); % 水平串联数组
             app.ConsoleTextArea.Value = app.cellArrayText; % 给TextArea赋值
+        end
+        
+        function process_folder(app)
+            % 定义放置处理图像的文件夹
+            folderProcessed = fullfile(app.folder, app.OutputFolderEditField.Value);
+
+            % 如果文件夹不存在，创建新的文件夹
+            if ~exist(folderProcessed, 'dir')
+                mkdir(folderProcessed);
+            end
+
+
+            % 指定的起始和结束编号
+            startIdx = app.StartIndexSpinner.Value;
+            endIdx = app.EndIndexSpinner.Value;
+
+            % 调用进度条
+            progressDlg = uiprogressdlg(app.TiffSplitChannelUIFigure,'Title','Processing',...
+                'Message','1','Cancelable','on');
+            numFiles = endIdx-startIdx+1; % 要处理的文件
+            count = 1; % 开始计数
+            isRight = true;
+            for idx = startIdx:endIdx
+                % 为了进度条的取消可以中断处理
+                if progressDlg.CancelRequested
+                    break
+                end
+
+                % 构建文件名
+                try
+                    filename = sprintf('file_%05d.tif', idx);
+                    filepath = fullfile(app.folder, filename);
+                    progressDlg.Message = sprintf('Processing %d/%d files: %s', count, numFiles, filename);
+
+                    % 分割通道
+                    split_channel(app,filepath,folderProcessed);
+                    
+                    % 处理完成
+                    app.print_console(sprintf('Processed: file_%05d.tif', idx));
+                catch ME
+                    if ME.identifier == "MATLAB:imagesci:imfinfo:fileOpen"
+                        app.print_console(warning('文件正在生成，请稍后再试'));
+                    else
+                        app.print_console(warning(ME.message));
+                    end
+
+                    isRight =false;
+                end
+                % Update progress, report current estimate
+                progressDlg.Value = count/numFiles;
+                count = count + 1;
+
+            end
+            if isRight
+                app.lastEndIndex = app.fileEndIndex;
+            end
+            % Close the dialog box
+            close(progressDlg)
+        end
+
+
+        function process_single_file(app)
+            % 定义放置处理图像的文件夹
+            [directory, fname, fext] = fileparts(app.tiffpath);
+            filename = strcat(fname, fext);
+            folderProcessed = fullfile(directory, app.OutputFolderEditField.Value);
+
+            % 如果文件夹不存在，创建新的文件夹
+            if ~exist(folderProcessed, 'dir')
+                mkdir(folderProcessed);
+            end
+
+            % 调用进度条
+            progressDlg = uiprogressdlg(app.TiffSplitChannelUIFigure,'Title','Processing',...
+                'Message','1');
+
+
+            % 构建文件名
+            try
+                progressDlg.Message = sprintf('Processing files: %s', filename);
+
+                % 分割通道
+                split_channel(app,app.tiffpath,folderProcessed);
+
+                % 处理完成
+                app.print_console(sprintf('Processed: %s', app.tiffpath));
+            catch ME
+                if ME.identifier == "MATLAB:imagesci:imfinfo:fileOpen"
+                    app.print_console(warning('文件正在生成，请稍后再试'));
+                else
+                    app.print_console(warning(ME.message));
+                end
+
+            end
+
+
+            % Close the dialog box
+            close(progressDlg)
+        end
+        
+        function split_channel(app,filepath,folderProcessed)
+            [imgStackCh1,imgStackCh2] = utils.tiff_read(filepath,2);
+
+            % 把scanimage的int16图像设置为uint16
+            imgStackCh1 = uint16(imgStackCh1);
+            imgStackCh2 = uint16(imgStackCh2);
+
+
+            % 消除PMT 的ripple noise：如果某个像素的灰度值小于700，就定义为0
+            rippleNoise = app.RippleNoiseSpinner.Value;
+            imgStackCh1(imgStackCh1 < rippleNoise) = 0;
+            imgStackCh2(imgStackCh2 < rippleNoise) = 0;
+
+            % scanphase correct
+            switch app.ScanphaseCorrectDropDown.Value
+                case 'Fixed'
+                    scanphase_offset = app.ScanphaseSpinner.Value;
+                case {'Off'}
+                    scanphase_offset = 0;
+                case {'Auto'}
+                    scanphase_offset = utils.predict_scanphase(imgStackCh1);
+                    app.print_console(sprintf("Scanphase predicted: %d",scanphase_offset));
+            end
+            if scanphase_offset
+                imgStackCh1 = utils.correct_scanphase(imgStackCh1,scanphase_offset);
+                imgStackCh2 = utils.correct_scanphase(imgStackCh2,scanphase_offset);
+            end
+
+            % 获取分辨率信息
+            tagstruct.XResolution = utils.tiff_get_resolution(filepath);
+            tagstruct.YResolution = tagstruct.XResolution;
+
+            % 保存为channel tif
+            [~, fname, fext] = fileparts(filepath);
+            utils.tiff_save(imgStackCh1,fullfile(folderProcessed, [fname,'_ch1',fext]),tagstruct);
+            utils.tiff_save(imgStackCh2,fullfile(folderProcessed, [fname,'_ch2',fext]),tagstruct);
+
+            % 保存为average tif
+            frames = size(imgStackCh1,3);
+            imgStackCh1Avg = utils.tiff_projection_avg(imgStackCh1);
+            utils.tiff_save(imgStackCh1Avg,fullfile(folderProcessed, sprintf('%s_ch1_%d_Frames_AVG%s', fname,frames, fext)),tagstruct);
+            imgStackCh2Avg = utils.tiff_projection_avg(imgStackCh2);
+            utils.tiff_save(imgStackCh2Avg,fullfile(folderProcessed, sprintf('%s_ch2_%d_Frames_AVG%s', fname,frames, fext)),tagstruct);
+
+            % 自动调整对比度 EnhanceContrast
+            utils.tiff_save(imadjust(imgStackCh1Avg),fullfile(folderProcessed, sprintf('%s_ch1_%d_Frames_AVG_EnhanceContrast%s', fname,frames, fext)),tagstruct);
+            utils.tiff_save(imadjust(imgStackCh2Avg),fullfile(folderProcessed, sprintf('%s_ch2_%d_Frames_AVG_EnhanceContrast%s', fname,frames, fext)),tagstruct);
+
         end
     end
     
@@ -147,111 +298,46 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
 
         % Button pushed function: FileSelectButton
         function FileSelectButtonPushed(app, event)
-            % 选择文件夹
-            path = utils.select_dir(app.folder);
-            if path == 0
-                errordlg('未选择文件夹');
-                return;
-            end
-            % 保存文件夹信息到变量
-            app.folder = path;
-            app.FolderEditField.Value = app.folder;
+            switch app.FolderDropDown.Value
+                case 'Folder'
+                    % 选择文件夹
+                    path = utils.select_dir(app.folder);
+                    if path == 0
+                        uialert(app.TiffSplitChannelUIFigure,'未选择文件夹','Warning','Icon','warning');
+                        return;
+                    end
+                    % 保存文件夹信息到变量
+                    app.folder = path;
+                    app.FolderEditField.Value = app.folder;
 
-            % 获取文件index范围
-            app.processed = 0;
-            app.update_tiff_index()
+                    % 获取文件index范围
+                    app.UpdateButton.Enable ='on';
+                    app.update_tiff_index()
+                case 'File'
+                    [filename,selectedDir] = utils.select_file({'.tif'},app.folder);
+                    if filename == 0 % 如果不选择文件返回为0
+                        uialert(app.TiffSplitChannelUIFigure,'未选择文件夹','Warning','Icon','warning');
+                        return;
+                    end
+                    app.tiffpath = fullfile(selectedDir,filename);
+                    app.FolderEditField.Value = app.tiffpath;
+                    app.ProcessButton.Enable = "on";
+                    app.OpenFolderButton.Enable = "on";
+                    app.RippleNoiseCheckBox.Enable = "on";
+                    app.index_updated = false;
+            end
+            
 
         end
 
         % Button pushed function: ProcessButton
         function ProcessButtonPushed(app, event)
-            % 定义放置处理图像的文件夹
-            folderProcessed = fullfile(app.folder, app.OutputFolderEditField.Value);
-            
-            % 如果文件夹不存在，创建新的文件夹
-            if ~exist(folderProcessed, 'dir')
-                mkdir(folderProcessed);
+            switch app.FolderDropDown.Value
+                case 'Folder'
+                    process_folder(app);
+                case 'File'
+                    process_single_file(app);
             end
-
-            
-            % 指定的起始和结束编号
-            startIdx = app.StartIndexSpinner.Value;
-            endIdx = app.EndIndexSpinner.Value;
-            
-            % 调用进度条
-            progressDlg = uiprogressdlg(app.TiffSplitChannelUIFigure,'Title','Processing',...
-                'Message','1','Cancelable','on');
-            numFiles = endIdx-startIdx+1; % 要处理的文件
-            count = 1; % 开始计数
-            isRight = true;
-            for idx = startIdx:endIdx
-                % 为了进度条的取消可以中断处理
-                if progressDlg.CancelRequested
-                    break
-                end
-
-                % 构建文件名
-                try
-                    filename = sprintf('file_%05d.tif', idx);
-                    filepath = fullfile(app.folder, filename);
-                    progressDlg.Message = sprintf('Processing %d/%d files: %s', count, numFiles, filename);
-
-                    % 分割通道
-                    [imgStackCh1,imgStackCh2] = utils.tiff_read(filepath,2);
-
-                    % 把scanimage的int16图像设置为uint16
-                    imgStackCh1 = uint16(imgStackCh1);
-                    imgStackCh2 = uint16(imgStackCh2);  
-
-
-                    % 消除PMT 的ripple noise：如果某个像素的灰度值小于700，就定义为0
-                    rippleNoise = app.RippleNoiseSpinner.Value;
-                    imgStackCh1(imgStackCh1 < rippleNoise) = 0;
-                    imgStackCh2(imgStackCh2 < rippleNoise) = 0;
-
-
-                    % 获取分辨率信息
-                    tagstruct.XResolution = utils.tiff_get_resolution(filepath);
-                    tagstruct.YResolution = tagstruct.XResolution;
-
-                    % 保存为channel tif
-                    [~, fname, fext] = fileparts(filename);
-                    utils.tiff_save(imgStackCh1,fullfile(folderProcessed, [fname,'_ch1',fext]),tagstruct);
-                    utils.tiff_save(imgStackCh2,fullfile(folderProcessed, [fname,'_ch2',fext]),tagstruct);
-
-                    % 保存为average tif
-                    frames = size(imgStackCh1,3);
-                    imgStackCh1Avg = utils.tiff_projection_avg(imgStackCh1);
-                    utils.tiff_save(imgStackCh1Avg,fullfile(folderProcessed, sprintf('%s_ch1_%d_Frames_AVG%s', fname,frames, fext)),tagstruct);
-                    imgStackCh2Avg = utils.tiff_projection_avg(imgStackCh2);
-                    utils.tiff_save(imgStackCh2Avg,fullfile(folderProcessed, sprintf('%s_ch2_%d_Frames_AVG%s', fname,frames, fext)),tagstruct);
-
-                    % 自动调整对比度 EnhanceContrast
-                    utils.tiff_save(imadjust(imgStackCh1Avg),fullfile(folderProcessed, sprintf('%s_ch1_%d_Frames_AVG_EnhanceContrast%s', fname,frames, fext)),tagstruct);
-                    utils.tiff_save(imadjust(imgStackCh2Avg),fullfile(folderProcessed, sprintf('%s_ch2_%d_Frames_AVG_EnhanceContrast%s', fname,frames, fext)),tagstruct);
-
-
-                    app.print_console(sprintf('Processed: file_%05d.tif', idx));
-                catch ME
-                    if ME.identifier == "MATLAB:imagesci:imfinfo:fileOpen"
-                        app.print_console(warning('文件正在生成，请稍后再试'));
-                    else
-                        app.print_console(warning(ME.message));
-                    end
-
-                    isRight =false;
-                end
-                % Update progress, report current estimate
-                progressDlg.Value = count/numFiles;
-                count = count + 1;
-
-            end
-            if isRight
-                app.processed = 1;
-                app.lastEndIndex = app.fileEndIndex;
-            end
-            % Close the dialog box
-            close(progressDlg)
             
 
         end
@@ -287,40 +373,6 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
             app.update_tiff_index()
         end
 
-        % Value changed function: ProcessAllCheckBox
-        function ProcessAllCheckBoxValueChanged(app, event)
-            value = app.ProcessAllCheckBox.Value;
-            if value
-                app.IncrementalModeCheckBox.Value = false;
-                app.StartIndexSpinner.Enable = "off";
-                app.EndIndexSpinner.Enable = "off";
-            else
-                app.StartIndexSpinner.Enable = "on";
-                app.EndIndexSpinner.Enable = "on";
-            end
-        end
-
-        % Value changed function: IncrementalModeCheckBox
-        function IncrementalModeCheckBoxValueChanged(app, event)
-            value = app.IncrementalModeCheckBox.Value;
-            if value
-                app.ProcessAllCheckBox.Value = false;
-                app.StartIndexSpinner.Enable = "on";
-                app.EndIndexSpinner.Enable = "on";
-            end
-        end
-
-        % Menu selected function: HelpMenu
-        function HelpMenuSelected(app, event)
-   
-            str = sprintf(['本软件用于分割 3 光子显微镜使用 Scanimage 采集的双通道图像。\n' ...
-                '默认勾选Incremental Mode，适用于采图过程中分割图像，\n' ...
-                '当采完新的图，只需要点击Update按钮，就会自动更新后续图片文件编号；\n' ...
-                '勾选 Process All，将处理文件夹下全部图片；\n' ...
-                '如果两个模式都不勾选，可以自定义选择要处理的图片文件编号范围。\n']);
-            uialert(app.TiffSplitChannelUIFigure,str,'Help','Icon','info');
-        end
-
         % Button pushed function: OpenFolderButton
         function OpenFolderButtonPushed(app, event)
 
@@ -354,6 +406,28 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
             delete(app)
             
         end
+
+        % Value changed function: ScanphaseCorrectDropDown
+        function ScanphaseCorrectDropDownValueChanged(app, event)
+            value = app.ScanphaseCorrectDropDown.Value;
+            switch value
+                case 'Fixed'
+                    app.ScanphaseSpinner.Visible = 'on';
+                case {'Off','Auto'}
+                    app.ScanphaseSpinner.Visible = 'off';
+            end
+        end
+
+        % Value changed function: FolderDropDown
+        function FolderDropDownValueChanged(app, event)
+            app.FolderEditField.Value = '';
+            app.StartIndexSpinner.Enable = 'off';
+            app.EndIndexSpinner.Enable = 'off';
+            app.UpdateButton.Enable = 'off';
+            app.ProcessButton.Enable = 'off';
+            app.TiffRangeLabel.Text = 'file_0000a ~ file_0000b';
+            app.OpenFolderButton.Enable="off";
+        end
     end
 
     % Component initialization
@@ -367,90 +441,64 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
 
             % Create TiffSplitChannelUIFigure and hide until all components are created
             app.TiffSplitChannelUIFigure = uifigure('Visible', 'off');
-            app.TiffSplitChannelUIFigure.Position = [100 100 643 375];
+            app.TiffSplitChannelUIFigure.Position = [100 100 684 388];
             app.TiffSplitChannelUIFigure.Name = 'Tiff Split Channel';
             app.TiffSplitChannelUIFigure.Icon = fullfile(pathToMLAPP, 'split.png');
             app.TiffSplitChannelUIFigure.CloseRequestFcn = createCallbackFcn(app, @TiffSplitChannelUIFigureCloseRequest, true);
 
-            % Create HelpMenu
-            app.HelpMenu = uimenu(app.TiffSplitChannelUIFigure);
-            app.HelpMenu.MenuSelectedFcn = createCallbackFcn(app, @HelpMenuSelected, true);
-            app.HelpMenu.Text = 'Help';
-
             % Create FileSelectButton
             app.FileSelectButton = uibutton(app.TiffSplitChannelUIFigure, 'push');
             app.FileSelectButton.ButtonPushedFcn = createCallbackFcn(app, @FileSelectButtonPushed, true);
-            app.FileSelectButton.Position = [566 335 25 23];
+            app.FileSelectButton.Position = [590 338 25 23];
             app.FileSelectButton.Text = '...';
-
-            % Create ProcessAllCheckBox
-            app.ProcessAllCheckBox = uicheckbox(app.TiffSplitChannelUIFigure);
-            app.ProcessAllCheckBox.ValueChangedFcn = createCallbackFcn(app, @ProcessAllCheckBoxValueChanged, true);
-            app.ProcessAllCheckBox.Text = 'Process All';
-            app.ProcessAllCheckBox.FontWeight = 'bold';
-            app.ProcessAllCheckBox.Position = [34 253 87 22];
 
             % Create ProcessButton
             app.ProcessButton = uibutton(app.TiffSplitChannelUIFigure, 'push');
             app.ProcessButton.ButtonPushedFcn = createCallbackFcn(app, @ProcessButtonPushed, true);
             app.ProcessButton.FontWeight = 'bold';
-            app.ProcessButton.Position = [24 58 100 23];
+            app.ProcessButton.Position = [29 56 100 23];
             app.ProcessButton.Text = 'Process';
 
             % Create TiffRangeLabel
             app.TiffRangeLabel = uilabel(app.TiffSplitChannelUIFigure);
-            app.TiffRangeLabel.Position = [88 297 150 22];
+            app.TiffRangeLabel.Position = [91 299 150 22];
             app.TiffRangeLabel.Text = 'file_0000a ~ file_0000b';
 
             % Create TiffLabel
             app.TiffLabel = uilabel(app.TiffSplitChannelUIFigure);
             app.TiffLabel.FontWeight = 'bold';
-            app.TiffLabel.Position = [34 297 25 22];
+            app.TiffLabel.Position = [37 299 25 22];
             app.TiffLabel.Text = 'Tiff';
 
             % Create UpdateButton
             app.UpdateButton = uibutton(app.TiffSplitChannelUIFigure, 'push');
             app.UpdateButton.ButtonPushedFcn = createCallbackFcn(app, @UpdateButtonPushed, true);
-            app.UpdateButton.Position = [247 297 51 23];
+            app.UpdateButton.Enable = 'off';
+            app.UpdateButton.Position = [250 299 51 23];
             app.UpdateButton.Text = 'Update';
-
-            % Create IncrementalModeCheckBox
-            app.IncrementalModeCheckBox = uicheckbox(app.TiffSplitChannelUIFigure);
-            app.IncrementalModeCheckBox.ValueChangedFcn = createCallbackFcn(app, @IncrementalModeCheckBoxValueChanged, true);
-            app.IncrementalModeCheckBox.Text = 'Incremental Mode';
-            app.IncrementalModeCheckBox.FontWeight = 'bold';
-            app.IncrementalModeCheckBox.Position = [187 253 124 22];
-            app.IncrementalModeCheckBox.Value = true;
 
             % Create OpenFolderButton
             app.OpenFolderButton = uibutton(app.TiffSplitChannelUIFigure, 'push');
             app.OpenFolderButton.ButtonPushedFcn = createCallbackFcn(app, @OpenFolderButtonPushed, true);
             app.OpenFolderButton.FontWeight = 'bold';
-            app.OpenFolderButton.Position = [147 58 100 23];
+            app.OpenFolderButton.Position = [171 56 100 23];
             app.OpenFolderButton.Text = 'Open Folder';
-
-            % Create FolderEditFieldLabel
-            app.FolderEditFieldLabel = uilabel(app.TiffSplitChannelUIFigure);
-            app.FolderEditFieldLabel.BackgroundColor = [0.9412 0.9412 0.9412];
-            app.FolderEditFieldLabel.FontWeight = 'bold';
-            app.FolderEditFieldLabel.Position = [35 335 42 22];
-            app.FolderEditFieldLabel.Text = 'Folder';
 
             % Create RippleNoiseCheckBox
             app.RippleNoiseCheckBox = uicheckbox(app.TiffSplitChannelUIFigure);
             app.RippleNoiseCheckBox.ValueChangedFcn = createCallbackFcn(app, @RippleNoiseCheckBoxValueChanged, true);
             app.RippleNoiseCheckBox.Text = '';
-            app.RippleNoiseCheckBox.Position = [238 140 26 22];
+            app.RippleNoiseCheckBox.Position = [289 180 26 22];
 
             % Create FolderEditField
             app.FolderEditField = uieditfield(app.TiffSplitChannelUIFigure, 'text');
             app.FolderEditField.BackgroundColor = [0.9412 0.9412 0.9412];
-            app.FolderEditField.Position = [89 335 464 22];
+            app.FolderEditField.Position = [115 338 464 22];
 
             % Create StartIndexSpinnerLabel
             app.StartIndexSpinnerLabel = uilabel(app.TiffSplitChannelUIFigure);
             app.StartIndexSpinnerLabel.FontWeight = 'bold';
-            app.StartIndexSpinnerLabel.Position = [34 212 71 22];
+            app.StartIndexSpinnerLabel.Position = [39 261 71 22];
             app.StartIndexSpinnerLabel.Text = 'Start Index ';
 
             % Create StartIndexSpinner
@@ -458,13 +506,13 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
             app.StartIndexSpinner.Limits = [1 Inf];
             app.StartIndexSpinner.ValueDisplayFormat = '%.0f';
             app.StartIndexSpinner.ValueChangedFcn = createCallbackFcn(app, @StartIndexSpinnerValueChanged, true);
-            app.StartIndexSpinner.Position = [129 212 100 22];
+            app.StartIndexSpinner.Position = [171 261 100 22];
             app.StartIndexSpinner.Value = 1;
 
             % Create EndIndexSpinnerLabel
             app.EndIndexSpinnerLabel = uilabel(app.TiffSplitChannelUIFigure);
             app.EndIndexSpinnerLabel.FontWeight = 'bold';
-            app.EndIndexSpinnerLabel.Position = [34 176 66 22];
+            app.EndIndexSpinnerLabel.Position = [38 219 66 22];
             app.EndIndexSpinnerLabel.Text = 'End Index ';
 
             % Create EndIndexSpinner
@@ -472,43 +520,68 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
             app.EndIndexSpinner.Limits = [1 Inf];
             app.EndIndexSpinner.ValueDisplayFormat = '%.0f';
             app.EndIndexSpinner.ValueChangedFcn = createCallbackFcn(app, @EndIndexSpinnerValueChanged, true);
-            app.EndIndexSpinner.Position = [129 176 100 22];
+            app.EndIndexSpinner.Position = [170 220 100 22];
             app.EndIndexSpinner.Value = 1;
 
             % Create OutputFolderEditFieldLabel
             app.OutputFolderEditFieldLabel = uilabel(app.TiffSplitChannelUIFigure);
             app.OutputFolderEditFieldLabel.FontWeight = 'bold';
-            app.OutputFolderEditFieldLabel.Position = [34 104 85 22];
+            app.OutputFolderEditFieldLabel.Position = [39 96 85 22];
             app.OutputFolderEditFieldLabel.Text = 'Output Folder';
 
             % Create OutputFolderEditField
             app.OutputFolderEditField = uieditfield(app.TiffSplitChannelUIFigure, 'text');
             app.OutputFolderEditField.HorizontalAlignment = 'right';
-            app.OutputFolderEditField.Position = [129 104 100 22];
+            app.OutputFolderEditField.Position = [170 96 100 22];
             app.OutputFolderEditField.Value = 'Processed';
 
             % Create ConsoleTextAreaLabel
             app.ConsoleTextAreaLabel = uilabel(app.TiffSplitChannelUIFigure);
             app.ConsoleTextAreaLabel.FontWeight = 'bold';
-            app.ConsoleTextAreaLabel.Position = [350 298 53 22];
+            app.ConsoleTextAreaLabel.Position = [353 300 53 22];
             app.ConsoleTextAreaLabel.Text = 'Console';
 
             % Create ConsoleTextArea
             app.ConsoleTextArea = uitextarea(app.TiffSplitChannelUIFigure);
-            app.ConsoleTextArea.Position = [350 58 270 237];
+            app.ConsoleTextArea.Position = [353 46 270 251];
 
             % Create RippleNoiseSpinnerLabel
             app.RippleNoiseSpinnerLabel = uilabel(app.TiffSplitChannelUIFigure);
             app.RippleNoiseSpinnerLabel.FontWeight = 'bold';
-            app.RippleNoiseSpinnerLabel.Position = [34 140 78 22];
+            app.RippleNoiseSpinnerLabel.Position = [37 178 78 22];
             app.RippleNoiseSpinnerLabel.Text = 'Ripple Noise';
 
             % Create RippleNoiseSpinner
             app.RippleNoiseSpinner = uispinner(app.TiffSplitChannelUIFigure);
             app.RippleNoiseSpinner.Limits = [0 Inf];
             app.RippleNoiseSpinner.Enable = 'off';
-            app.RippleNoiseSpinner.Position = [129 140 100 22];
+            app.RippleNoiseSpinner.Position = [169 178 100 22];
             app.RippleNoiseSpinner.Value = 700;
+
+            % Create ScanphaseCorrectDropDownLabel
+            app.ScanphaseCorrectDropDownLabel = uilabel(app.TiffSplitChannelUIFigure);
+            app.ScanphaseCorrectDropDownLabel.FontWeight = 'bold';
+            app.ScanphaseCorrectDropDownLabel.Position = [38 137 114 22];
+            app.ScanphaseCorrectDropDownLabel.Text = 'Scanphase Correct';
+
+            % Create ScanphaseCorrectDropDown
+            app.ScanphaseCorrectDropDown = uidropdown(app.TiffSplitChannelUIFigure);
+            app.ScanphaseCorrectDropDown.Items = {'Off', 'Auto', 'Fixed'};
+            app.ScanphaseCorrectDropDown.ValueChangedFcn = createCallbackFcn(app, @ScanphaseCorrectDropDownValueChanged, true);
+            app.ScanphaseCorrectDropDown.Position = [169 137 100 22];
+            app.ScanphaseCorrectDropDown.Value = 'Off';
+
+            % Create ScanphaseSpinner
+            app.ScanphaseSpinner = uispinner(app.TiffSplitChannelUIFigure);
+            app.ScanphaseSpinner.Visible = 'off';
+            app.ScanphaseSpinner.Position = [289 137 49 22];
+
+            % Create FolderDropDown
+            app.FolderDropDown = uidropdown(app.TiffSplitChannelUIFigure);
+            app.FolderDropDown.Items = {'Folder', 'File'};
+            app.FolderDropDown.ValueChangedFcn = createCallbackFcn(app, @FolderDropDownValueChanged, true);
+            app.FolderDropDown.Position = [34 338 69 22];
+            app.FolderDropDown.Value = 'Folder';
 
             % Show the figure after all components are created
             app.TiffSplitChannelUIFigure.Visible = 'on';
