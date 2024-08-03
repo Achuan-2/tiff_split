@@ -1,0 +1,85 @@
+<deployment-project plugin="plugin.apptool" plugin-version="1.0">
+  <configuration file="D:\SynologyDrive\Member-Jixiong-Su\Code\1_project\Tiff_split\Tiff Split Channel.prj" location="D:\SynologyDrive\Member-Jixiong-Su\Code\1_project\Tiff_split" name="Tiff Split Channel" target="target.mlapps" target-name="Package App">
+    <param.appname>Tiff Split Channel</param.appname>
+    <param.authnamewatermark>Jixiong Su</param.authnamewatermark>
+    <param.email />
+    <param.company />
+    <param.icon />
+    <param.icons />
+    <param.summary />
+    <param.description />
+    <param.screenshot>C:\Users\Achuan-2\AppData\Local\Temp\tpc161c419_d223_4a50_b586_236658577793.png</param.screenshot>
+    <param.version>1.8</param.version>
+    <param.products.name />
+    <param.products.id />
+    <param.products.version />
+    <param.platforms />
+    <param.output>${PROJECT_ROOT}</param.output>
+    <param.guid>bd9ec4dd-d711-45e8-94bd-91e355cfa341</param.guid>
+    <unset>
+      <param.email />
+      <param.company />
+      <param.icon />
+      <param.icons />
+      <param.summary />
+      <param.description />
+      <param.products.name />
+      <param.products.id />
+      <param.products.version />
+      <param.platforms />
+      <param.output />
+    </unset>
+    <fileset.main>
+      <file>${PROJECT_ROOT}\TiffSplitChannel.mlapp</file>
+    </fileset.main>
+    <fileset.depfun>
+      <file>${PROJECT_ROOT}\+utils\correct_scanphase.m</file>
+      <file>${PROJECT_ROOT}\+utils\get_tiff_num_range.m</file>
+      <file>${PROJECT_ROOT}\+utils\predict_scanphase.m</file>
+      <file>${PROJECT_ROOT}\+utils\select_dir.m</file>
+      <file>${PROJECT_ROOT}\+utils\select_file.m</file>
+      <file>${PROJECT_ROOT}\+utils\tiff_projection_avg.m</file>
+      <file>${PROJECT_ROOT}\+utils\tiff_read.m</file>
+      <file>${PROJECT_ROOT}\+utils\tiff_save.m</file>
+      <file>${PROJECT_ROOT}\split.png</file>
+    </fileset.depfun>
+    <fileset.resources />
+    <fileset.package />
+    <build-deliverables>
+      <file location="D:\SynologyDrive\Member-Jixiong-Su\Code\1_project" name="Tiff_split" optional="false">D:\SynologyDrive\Member-Jixiong-Su\Code\1_project\Tiff_split</file>
+    </build-deliverables>
+    <workflow />
+    <matlab>
+      <root>C:\Program Files\MATLAB\R2023b</root>
+      <toolboxes>
+        <toolbox name="matlabcoder" />
+        <toolbox name="neuralnetwork" />
+      </toolboxes>
+      <toolbox>
+        <matlabcoder>
+          <enabled>true</enabled>
+        </matlabcoder>
+      </toolbox>
+      <toolbox>
+        <neuralnetwork>
+          <enabled>true</enabled>
+        </neuralnetwork>
+      </toolbox>
+    </matlab>
+    <platform>
+      <unix>false</unix>
+      <mac>false</mac>
+      <windows>true</windows>
+      <win2k>false</win2k>
+      <winxp>false</winxp>
+      <vista>false</vista>
+      <linux>false</linux>
+      <solaris>false</solaris>
+      <osver>10.0</osver>
+      <os32>false</os32>
+      <os64>true</os64>
+      <arch>win64</arch>
+      <matlab>true</matlab>
+    </platform>
+  </configuration>
+</deployment-project>

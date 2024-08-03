@@ -1,4 +1,4 @@
-function varargout = tiff_read(filepath, nChannel)
+function output = tiff_read(filepath, nChannel)
     %tiff_read_volume - 读取Tiff图像的灰度值.
     %
     %   USAGE
@@ -14,7 +14,7 @@ function varargout = tiff_read(filepath, nChannel)
     %       imgStack         -   输出nChannel个图像
     arguments
         filepath string;
-        nChannel double = 1;
+        nChannel int16 = 1;
     end
 
     t = Tiff(filepath, 'r');
@@ -39,15 +39,15 @@ function varargout = tiff_read(filepath, nChannel)
 
     % 如果 Tif 只有一个通道，直接输出读的结果即可
     if nChannel == 1
-        varargout{1} = imgStack;
+        output = imgStack;
         return
     end
 
     % 如果 Tif 有多个通道，则需要分割出各个通道图像
-    varargout = cell(1, nChannel);
+    output = cell(1, nChannel);
 
     for iChannel = 1:nChannel
-        varargout{iChannel} = imgStack(:, :, iChannel:nChannel:end);
+        output{iChannel} = imgStack(:, :, iChannel:nChannel:end);
     end
 
 end
