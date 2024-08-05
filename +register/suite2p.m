@@ -1,3 +1,10 @@
+% frames = tiff_read("C:\Users\Achuan-2\Desktop\test\file_00001.tif");
+% ops = register.suite2p.default_ops();
+% refImg = register.suite2p.compute_reference(frames,ops);
+% refAndMasks = register.suite2p.compute_reference_masks(refImg, ops);
+%[frames, ymax, xmax, cmax] = register.suite2p.register_frames(refAndMasks, frames,  ops);
+% tiff_save(frames,'reg.tif');
+
 classdef suite2p
     methods(Static)
         function refImg = compute_reference(frames, ops)

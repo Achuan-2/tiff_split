@@ -59,6 +59,7 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
         onlyOne = false;
         processed = 0;
         cellArrayText;
+        cellArrayText2;
         exePath;% app 或者exe地址
         reg_tifFiles;
     end
@@ -124,8 +125,8 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
         function print_console2(app,str)
             time = datetime("now","Format","HH:mm:ss");
             string = sprintf('%s\n%s\n', time,str); % 将数据格式化为字符串或字符向量
-            app.cellArrayText=horzcat(app.cellArrayText,string); % 水平串联数组
-            app.ConsoleTextArea_2.Value = app.cellArrayText; % 给TextArea赋值
+            app.cellArrayText2=horzcat(app.cellArrayText2,string); % 水平串联数组
+            app.ConsoleTextArea_2.Value = app.cellArrayText2; % 给TextArea赋值
         end
         function process_folder(app)
             % 定义放置处理图像的文件夹
@@ -166,11 +167,12 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
                     app.print_console(sprintf('Processed: file_%05d.tif', idx));
                 catch ME
                     if ME.identifier == "MATLAB:imagesci:imfinfo:fileOpen"
-                        app.print_console('文件正在生成，请稍后再试！');
+                        app.print_console('文件不存在或者正在生成！');
                     else
                         app.print_console(ME.message);
+                        utils.report_error(ME);
                     end
-
+                
                     isRight =false;
                 end
                 % Update progress, report current estimate
@@ -213,7 +215,7 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
                 app.print_console(sprintf('Processed: %s', app.tiffpath));
             catch ME
                 if ME.identifier == "MATLAB:imagesci:Tiff:unableToOpenFile"
-                    app.print_console('文件正在生成，请稍后再试！');
+                    app.print_console('文件不存在或者正在生成！');
                 else
                     app.print_console(ME.message);
                 end
@@ -226,79 +228,56 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
         end
 
         function split_channel(app,filepath,folderProcessed,nChannels)
-            output = utils.tiff_read(filepath,nChannels);
-            if nChannels == 1
-                imgStacks{1} = output;
-            else
-                imgStacks = output;
-            end
-            clear output;
-            % 把scanimage的int16图像设置为uint16
-            for i = 1:nChannels
-                imgStacks{i} = uint16(imgStacks{i});
-            end
-
-
-            % 消除PMT的ripple noise
-            rippleNoise = app.RippleNoiseSpinner.Value;
-            for i = 1:nChannels
-                imgStacks{i}(imgStacks{i} < rippleNoise) = 0;
-            end
+            % 分割通道
+            utils.tiff_split(filepath, nChannels, 'FolderProcessed',folderProcessed, 'AvgOutput', true, 'rippleNoise', app.RippleNoiseSpinner.Value);
 
             % scanphase correct
-            switch app.ScanphaseCorrectDropDown.Value
-                case 'Fixed'
-                    scanphase_offset = app.ScanphaseSpinner.Value;
-                case 'Off'
-                    scanphase_offset = 0;
-                case 'Auto'
-                    scanphase_offset = utils.predict_scanphase(imgStacks{1});
-                    app.print_console(sprintf("Scanphase predicted: %d", scanphase_offset));
-            end
-            if scanphase_offset
-                for i = 1:nChannels
-                    imgStacks{i} = utils.correct_scanphase(imgStacks{i}, scanphase_offset);
-                end
-            end
-
-            % 获取分辨率信息
-            t = Tiff(filepath, 'r');
-            try
-                tagstruct.XResolution = t.getTag('XResolution');
-                tagstruct.YResolution = tagstruct.XResolution;
-            catch
+            if app.ScanphaseCorrectDropDown.Value == "Fixed" || app.ScanphaseCorrectDropDown.Value == "Auto"
+                [~, fname, ~] = fileparts(filepath);
+                scanphase_offset = 0;
                 tagstruct = struct();
-            end
-            t.close();
+                for i = 1:nChannels
+                    baseFilename = sprintf('%s_ch%d.tif', fname, i); 
 
-            % 保存为channel tif和average tif
-            [~, fname, ~] = fileparts(filepath);
-            nframes = size(imgStacks{1}, 3);
-
-            for i = 1:nChannels
-                % 根据通道数量决定文件名格式
-                if nChannels == 1
-                    baseFilename = sprintf('%s.tif', fname);
-                    regFilename = sprintf('%s_reg.tif', fname);
-                    avgFilename = sprintf('%s_%d_Frames_AVG.tif', fname, nframes);
-                    enhanceFilename = sprintf('%s_%d_Frames_AVG_EnhanceContrast.tif', fname, nframes);
-                else
-                    baseFilename = sprintf('%s_ch%d.tif', fname, i);
-                    regFilename = sprintf('%s_ch%d_reg.tif', fname, i);
+                    imgStack = utils.tiff_read(fullfile(folderProcessed, baseFilename));
+                    nframes = size(imgStack,3);
                     avgFilename = sprintf('%s_ch%d_%d_Frames_AVG.tif', fname, i, nframes);
                     enhanceFilename = sprintf('%s_ch%d_%d_Frames_AVG_EnhanceContrast.tif', fname, i, nframes);
+                    if i == 1
+                        if app.ScanphaseCorrectDropDown.Value == "Fixed"
+                            scanphase_offset  = app.ScanphaseSpinner.Value;
+                        else
+                            scanphase_offset = register.scanphase_predict(imgStack);
+                            app.print_console(sprintf("Scanphase predicted: %d", scanphase_offset));
+                        end
+                        if scanphase_offset == 0
+                            break;
+                        end
+
+
+                        t = Tiff(fullfile(folderProcessed, baseFilename), 'r');
+                        try
+                            tagstruct.XResolution = t.getTag('XResolution');
+                            tagstruct.YResolution = tagstruct.XResolution;
+                        catch
+                            
+                        end
+                        t.close();
+                    end
+                    imgStack = register.scanphase_correct(imgStack, scanphase_offset);
+
+                    % 保存
+
+                    utils.tiff_save(imgStack,fullfile(folderProcessed, baseFilename),tagstruct);
+
+                    % 计算并保存平均投影
+                    imgStackAvg = utils.tiff_projection_avg(imgStack);
+                    utils.tiff_save(imgStackAvg, fullfile(folderProcessed, avgFilename), tagstruct);
+
+                    % 自动调整对比度并保存
+                    utils.tiff_save(imadjust(imgStackAvg), fullfile(folderProcessed, enhanceFilename), tagstruct);
                 end
-
-                % 保存原始通道
-                utils.tiff_save(imgStacks{i}, fullfile(folderProcessed, baseFilename), tagstruct);
-
-
-                % 计算并保存平均投影
-                imgStackAvg = utils.tiff_projection_avg(imgStacks{i});
-                utils.tiff_save(imgStackAvg, fullfile(folderProcessed, avgFilename), tagstruct);
-
-                % 自动调整对比度并保存
-                utils.tiff_save(imadjust(imgStackAvg), fullfile(folderProcessed, enhanceFilename), tagstruct);
+                    
             end
 
         end
@@ -428,11 +407,11 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
                 case 'Off'
                     scanphase_offset = 0;
                 case 'Auto'
-                    scanphase_offset = utils.predict_scanphase(imgStack);
+                    scanphase_offset = register.scanphase_predict(imgStack);
                     app.print_console2(sprintf("Scanphase predicted: %d", scanphase_offset));
             end
             if scanphase_offset
-                imgStack = utils.correct_scanphase(imgStack, scanphase_offset);
+                imgStack = register.scanphase_correct(imgStack, scanphase_offset);
             end
 
 
@@ -491,8 +470,9 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
 
             today = datetime("now","Format","uuuu-MM-dd");
             app.cellArrayText{1} = sprintf('%s %s\n', 'Date:', today); % 赋初值
+            app.cellArrayText2{1} = sprintf('%s %s\n', 'Date:', today); % 赋初值
             app.ConsoleTextArea.Value=app.cellArrayText{1}; % 文本区域中的初始显示信息
-            app.ConsoleTextArea_2.Value=app.cellArrayText{1}; % 文本区域中的初始显示信息
+            app.ConsoleTextArea_2.Value=app.cellArrayText2{1}; % 文本区域中的初始显示信息
             % 检测是否存在config.json文件，如果没有，则新建
 
             app.exePath = utils.GetExecutableFolder();
@@ -720,6 +700,17 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
             app.ProcessButton_2.Enable = 'off';
             app.OpenFolderButton_2.Enable="off";
         end
+
+        % Value changed function: ScanphaseCorrectDropDown_2
+        function ScanphaseCorrectDropDown_2ValueChanged(app, event)
+            value = app.ScanphaseCorrectDropDown_2.Value;
+            switch value
+                case 'Fixed'
+                    app.ScanphaseSpinner_2.Visible = 'on';
+                case {'Off','Auto'}
+                    app.ScanphaseSpinner_2.Visible = 'off';
+            end
+        end
     end
 
     % Component initialization
@@ -798,7 +789,7 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
             % Create ScanphaseSpinner
             app.ScanphaseSpinner = uispinner(app.TiffSplitTab);
             app.ScanphaseSpinner.Visible = 'off';
-            app.ScanphaseSpinner.Position = [267 134 49 22];
+            app.ScanphaseSpinner.Position = [267 134 50 22];
 
             % Create FolderDropDown
             app.FolderDropDown = uidropdown(app.TiffSplitTab);
@@ -958,6 +949,7 @@ classdef TiffSplitChannel_exported < matlab.apps.AppBase
             % Create ScanphaseCorrectDropDown_2
             app.ScanphaseCorrectDropDown_2 = uidropdown(app.TiffRegTab);
             app.ScanphaseCorrectDropDown_2.Items = {'Off', 'Auto', 'Fixed'};
+            app.ScanphaseCorrectDropDown_2.ValueChangedFcn = createCallbackFcn(app, @ScanphaseCorrectDropDown_2ValueChanged, true);
             app.ScanphaseCorrectDropDown_2.Position = [151 243 100 22];
             app.ScanphaseCorrectDropDown_2.Value = 'Off';
 

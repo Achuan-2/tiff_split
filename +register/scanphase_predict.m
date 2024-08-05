@@ -1,6 +1,9 @@
-function bidiphase = predict_scanphase(imgStack)
+function bidiphase = scanphase_predict(imgStack)
     % Returns the bidirectional phase offset, the offset between lines that sometimes occurs in line scanning.
     % frames :  Height x Width × frames
+
+    % Transfer imgStack to GPU
+    imgStack = gpuArray(imgStack);
 
     [~, Width, ~] = size(imgStack);
 
@@ -15,6 +18,10 @@ function bidiphase = predict_scanphase(imgStack)
     cc = real(ifft(d1 .* d2, [], 2));
     cc = mean(mean(cc, 3), 1);
     cc = fftshift(cc);
+
+    % Transfer cc back to CPU for the final computation
+    cc = gather(cc);
+
     % max shift of +/-5 pixels
     [~, ix] = max(cc(floor(Width/2)+1 + (-5:5)));
     bidiphase = -(ix-6);

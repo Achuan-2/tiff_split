@@ -101,7 +101,7 @@ function tagstruct = generate_tagstruct(input_img)
     else
          tagstruct.SampleFormat = Tiff.SampleFormat.Int;
     end
-    tagstruct.ResolutionUnit = 3;
+    tagstruct.ResolutionUnit = Tiff.ResolutionUnit.Centimeter;
     tagstruct.SamplesPerPixel = 1;
     tagstruct.PlanarConfiguration = Tiff.PlanarConfiguration.Chunky;
 end
