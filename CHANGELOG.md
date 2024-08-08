@@ -10,6 +10,7 @@ TODO
 * ✨美化了下进度条，用html解析，对文件数和当前处理帧数进行加粗
 * ✨配准的进度条添加`Indeterminate=on`参数，有一个进度条持续变化，不那么枯燥
 * 💄界面优化：nChannel的Spinner调窄，start和end放在一排
+* 📝更新README
 
 ## v2.1 / 2024.08.05
 
