@@ -1,5 +1,5 @@
 function tiff_split(inputFilePath, numChannels, options)
-    % tiff_split - 将多通道TIFF文件分割为单通道TIFF文件，并可选择去除涟漪噪
+    % tiff_split - 将多通道TIFF文件分割为单通道TIFF文件，并可选择去除涟漪噪声
     %
     % 输入:
     %   inputFilePath   - 输入TIFF文件的完整路径 (字符串)
@@ -13,6 +13,7 @@ function tiff_split(inputFilePath, numChannels, options)
     %   'AvgOutput'       - 是否计算并保存平均投影 (逻辑值, 可选, 默认为true)
     %   'rippleNoise'     - 去除涟漪噪声的阈值 (数值, 可选, 默认为700)
     %                       将小于此阈值的像素值设为0，用于去除低强度噪声
+    %   'progressDlg'        - progressDlg句柄，用于显示进度条 (可选)
     %
     % 示例:
     %   tiff_split('input.tif', 3)
@@ -20,8 +21,6 @@ function tiff_split(inputFilePath, numChannels, options)
     %   tiff_split('input.tif', 3, 'FolderProcessed', 'C:\absolute\path\to\output')
     %   tiff_split('input.tif', 3, 'AvgOutput', true)
     %   tiff_split('input.tif', 3, 'rippleNoise', 500)
-    %   tiff_split('input.tif', 3, 'FolderProcessed', 'output_folder', 'AvgOutput', true, 'rippleNoise', 600)
-    %
 
 
     arguments
@@ -30,10 +29,17 @@ function tiff_split(inputFilePath, numChannels, options)
         options.FolderProcessed (1,1) string = "Processed"
         options.AvgOutput (1,1) logical = true
         options.rippleNoise = 700
+        options.progressDlg = []
     end
 
     % 获取输入文件的目录
     [inputDir, inputName, inputExt] = fileparts(inputFilePath);
+    filename = strcat(inputName,inputExt);
+    % 获取输入文件大小
+    fileInfo = dir(inputFilePath);
+    inputFileSize = fileInfo.bytes;
+    % 决定是否使用BigTiff
+    useBigTiff = (inputFileSize/numChannels) > 3.9 * 1024^3; % threshold: 3.9GB
     
     % 判断FolderProcessed是否为绝对路径
     if isabs(options.FolderProcessed)
@@ -55,6 +61,15 @@ function tiff_split(inputFilePath, numChannels, options)
         return
     end
 
+    % 初始化进度显示
+    if isempty(options.progressDlg)
+        % 使用 waitbar
+        waitbarHandle = waitbar(0, 'Processing...', 'Name', sprintf('TIFF Split Progress: %s',filename), 'CreateCancelBtn', 'setappdata(gcbf,''canceling'',1)');
+        setappdata(waitbarHandle, 'canceling', 0)
+    else
+        progressDlg_messages = options.progressDlg.Message;
+    end
+
     % 打开输入文件
     inputTiff = Tiff(inputFilePath, 'r');
     cleanupObj = onCleanup(@() close(inputTiff));
@@ -63,7 +78,15 @@ function tiff_split(inputFilePath, numChannels, options)
     outputTiffs = cell(1, numChannels);
     for ch = 1:numChannels
         outputFilePath = fullfile(folderProcessed, sprintf('%s_ch%d%s', inputName, ch, inputExt));
-        outputTiffs{ch} = Tiff(outputFilePath, 'w');
+
+        % 创建输出文件
+        if useBigTiff
+            % 使用BigTiff格式存储输出文件
+            outputTiffs{ch} = Tiff(outputFilePath, 'w8'); % 使用BigTiff格式
+        else
+            % 使用标准Tiff格式存储输出文件
+            outputTiffs{ch} = Tiff(outputFilePath, 'w');
+        end
     end
 
     % 初始化累加器和帧计数器
@@ -73,6 +96,16 @@ function tiff_split(inputFilePath, numChannels, options)
     % 处理每一帧
     tagstructs = struct();
     for frameIdx = 1:numFrames
+        % 检查是否取消：取消之后会保存当前已经处理的帧到tif文件
+        if isempty(options.progressDlg) && getappdata(waitbarHandle, 'canceling')
+            disp('Operation canceled by user');
+            delete(waitbarHandle);
+            break 
+        else
+            if options.progressDlg.CancelRequested
+                break
+            end
+        end
         inputTiff.setDirectory(frameIdx);
         frame = inputTiff.read();
         channelIdx = mod(frameIdx - 1, numChannels) + 1;
@@ -81,7 +114,6 @@ function tiff_split(inputFilePath, numChannels, options)
         frame(frame<options.rippleNoise) = 0;
         % 转化为uint16
         frame = uint16(frame);
-
 
         % write 
         if isempty(fieldnames(tagstructs))
@@ -126,8 +158,20 @@ function tiff_split(inputFilePath, numChannels, options)
             end
             frameCounts(channelIdx) = frameCounts(channelIdx) + 1;
         end
+
+        % 更新进度显示
+        if isempty(options.progressDlg)
+            waitbar(frameIdx / numFrames, waitbarHandle, sprintf('Processing: %d/%d', frameIdx, numFrames));
+        else
+            options.progressDlg.Message = sprintf('%s [%d/%d]', progressDlg_messages,frameIdx, numFrames);
+            options.progressDlg.Value = frameIdx/numFrames;
+        end
     end
 
+    % 完成进度显示
+    if isempty(options.progressDlg)
+        delete(waitbarHandle);
+    end
     % 关闭所有输出文件
     cellfun(@close, outputTiffs);
     
@@ -140,7 +184,6 @@ function tiff_split(inputFilePath, numChannels, options)
             % 计算平均投影
             imgStackAvg = accumulators{i} / frameCounts(i);
             imgStackAvg = im2uint8(mat2gray(imgStackAvg));
-
             
             % 保存平均投影
             utils.tiff_save(imgStackAvg, fullfile(folderProcessed, avgFilename), resolutionTags);
@@ -176,6 +219,7 @@ function tagstruct = generate_tagstruct(input_img)
     tagstruct.SamplesPerPixel = 1;
     tagstruct.PlanarConfiguration = Tiff.PlanarConfiguration.Chunky;
 end
+
 function result = isabs(path)
     % 判断路径是否为绝对路径
     if ispc
