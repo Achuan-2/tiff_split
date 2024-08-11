@@ -163,7 +163,7 @@ function tiff_split(inputFilePath, numChannels, options)
         if isempty(options.progressDlg)
             waitbar(frameIdx / numFrames, waitbarHandle, sprintf('Processing: %d/%d', frameIdx, numFrames));
         else
-            options.progressDlg.Message = sprintf('%s [%d/%d]', progressDlg_messages,frameIdx, numFrames);
+            options.progressDlg.Message = sprintf('%s丨[%d/%d]', progressDlg_messages,frameIdx, numFrames);
             options.progressDlg.Value = frameIdx/numFrames;
         end
     end
